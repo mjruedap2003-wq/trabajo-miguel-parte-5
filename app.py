@@ -92,7 +92,7 @@ with st.sidebar:
     display_output_text = st.checkbox("Mostrar texto traducido", value=True)
 
     st.divider()
-    st.subheader("🐢 Mascota Guardiana")
+    st.subheader("🐢 El animal mas aspero del oceano")
     # Imagen de la tortuga
     try:
         tortuga_img = Image.open("tortuga.jpg")
