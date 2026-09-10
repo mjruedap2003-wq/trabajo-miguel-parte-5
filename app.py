@@ -34,10 +34,10 @@ def remove_old_files(days=1):
 remove_old_files(1)
 
 # --- INTERFAZ PRINCIPAL ---
-st.title("🎙️ Lectura Divertida de Imágenes (OCR + Voz)")
+st.title("🎙️ Lectura Divertida de Imágenes modo tortuga o modo liebre (OCR + Voz)")
 st.caption(
     "Extrae texto de cualquier foto, tradúcelo y escúchalo con velocidades y"
-    " acentos chistosos."
+    " acentos chistosos jajajajaja."
 )
 
 st.divider()
