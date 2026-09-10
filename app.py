@@ -1,187 +1,188 @@
-import streamlit as st
+import glob
+import io
 import os
 import time
-import glob
-import os
+
 import cv2
-import numpy as np
-import pytesseract
-from PIL import Image
+from deep_translator import GoogleTranslator
 from gtts import gTTS
-from googletrans import Translator
+import numpy as np
+from PIL import Image
+import pytesseract
+import streamlit as st
+
+# Configuración básica
+st.set_page_config(
+    page_title="Lector Divertido - OCR y Voz", layout="centered"
+)
 
 
-text=" "
-
-def text_to_speech(input_language, output_language, text, tld):
-    translation = translator.translate(text, src=input_language, dest=output_language)
-    trans_text = translation.text
-    tts = gTTS(trans_text, lang=output_language, tld=tld, slow=False)
-    try:
-        my_file_name = text[0:20]
-    except:
-        my_file_name = "audio"
-    tts.save(f"temp/{my_file_name}.mp3")
-    return my_file_name, trans_text
-
-
-
-
-def remove_files(n):
-    mp3_files = glob.glob("temp/*mp3")
-    if len(mp3_files) != 0:
-        now = time.time()
-        n_days = n * 86400
-        for f in mp3_files:
-            if os.stat(f).st_mtime < now - n_days:
+# Limpieza de archivos de audio antiguos
+def remove_old_files(days=1):
+    os.makedirs("temp", exist_ok=True)
+    mp3_files = glob.glob("temp/*.mp3")
+    now = time.time()
+    n_days = days * 86400
+    for f in mp3_files:
+        if os.stat(f).st_mtime < now - n_days:
+            try:
                 os.remove(f)
-                print("Deleted ", f)
+            except OSError:
+                pass
 
 
-remove_files(7)
-  
+remove_old_files(1)
 
+# --- INTERFAZ PRINCIPAL ---
+st.title("🎙️ Lectura Divertida de Imágenes (OCR + Voz)")
+st.caption(
+    "Extrae texto de cualquier foto y escúchalo traducido o con voces y"
+    " acentos chistosos."
+)
 
+# Imagen decorativa previa
+try:
+    image_banner = Image.open("OIG7.jpg")
+    st.image(
+        image_banner,
+        use_container_width=True,
+        caption="¡Transforma tus fotos en audio con estilo!",
+    )
+except FileNotFoundError:
+    pass
 
-st.title("Reconocimiento Óptico de Caracteres")
-st.subheader("Elige la fuente de la imágen, esta puede venir de la cámara o cargando un archivo")
+st.divider()
 
-cam_ = st.checkbox("Usar Cámara")
+# Mapeos de idiomas y acentos
+IDIOMAS = {
+    "Español": {"ocr": "spa", "code": "es"},
+    "Inglés": {"ocr": "eng", "code": "en"},
+    "Francés": {"ocr": "fra", "code": "fr"},
+    "Alemán": {"ocr": "deu", "code": "de"},
+    "Italiano": {"ocr": "ita", "code": "it"},
+    "Portugués": {"ocr": "por", "code": "pt"},
+}
 
-if cam_ :
-   img_file_buffer = st.camera_input("Toma una Foto")
-else :
-   img_file_buffer = None
-   
+ACENTOS_TLD = {
+    "Estándar": "com",
+    "Reino Unido 🇬🇧": "co.uk",
+    "Estados Unidos 🇺🇸": "com",
+    "Australia 🇦🇺": "com.au",
+    "India 🇮🇳": "co.in",
+    "Irlanda 🇮🇪": "ie",
+    "Sudáfrica 🇿🇦": "co.za",
+}
+
+# --- CONFIGURACIÓN EN LA BARRA LATERAL ---
 with st.sidebar:
-      st.subheader("Procesamiento para Cámara")
-      filtro = st.radio("Filtro para imagen con cámara",('Sí', 'No'))
+    st.header("⚙️ 1. Ajustes de Imagen")
+    filtro = st.radio("Filtro de Contraste (Cámara)", ("No", "Sí"))
 
-bg_image = st.file_uploader("Cargar Imagen:", type=["png", "jpg"])
-if bg_image is not None:
-    uploaded_file=bg_image
-    st.image(uploaded_file, caption='Imagen cargada.', use_container_width=True)
-    
-    # Guardar la imagen en el sistema de archivos
-    with open(uploaded_file.name, 'wb') as f:
-        f.write(uploaded_file.read())
-    
-    st.success(f"Imagen guardada como {uploaded_file.name}")
-    img_cv = cv2.imread(f'{uploaded_file.name}')
+    st.header("🌐 2. Idioma y Traducción")
+    in_lang_name = st.selectbox(
+        "Idioma del texto en la foto:", list(IDIOMAS.keys()), index=0
+    )
+    out_lang_name = st.selectbox(
+        "Idioma al que traducir la voz:", list(IDIOMAS.keys()), index=0
+    )
+
+    st.header("🎭 3. Efecto de Voz Divertido")
+    accent_name = st.selectbox(
+        "Acento Regional (TLD):", list(ACENTOS_TLD.keys())
+    )
+    voz_lenta = st.checkbox("🐢 Modo Voz Robot (Lectura Lenta)", value=False)
+    display_output_text = st.checkbox("Mostrar texto traducido", value=True)
+
+# --- CAPTURA O CARGA DE IMAGEN ---
+st.subheader("📸 Captura o Sube tu Imagen")
+cam_option = st.checkbox("Usar Cámara")
+
+img_cv = None
+
+if cam_option:
+    img_file_buffer = st.camera_input("Toma una Foto")
+    if img_file_buffer is not None:
+        bytes_data = img_file_buffer.getvalue()
+        img_cv = cv2.imdecode(
+            np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
+        )
+        if filtro == "Sí":
+            img_cv = cv2.bitwise_not(img_cv)
+else:
+    bg_image = st.file_uploader(
+        "Cargar Imagen desde archivo:", type=["png", "jpg", "jpeg"]
+    )
+    if bg_image is not None:
+        file_bytes = np.asarray(bytearray(bg_image.read()), dtype=np.uint8)
+        img_cv = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        st.image(
+            img_cv,
+            channels="BGR",
+            caption="Imagen cargada",
+            use_container_width=True,
+        )
+
+# --- PROCESAMIENTO DE OCR Y VOZ ---
+if img_cv is not None:
+    ocr_code = IDIOMAS[in_lang_name]["ocr"]
+    src_code = IDIOMAS[in_lang_name]["code"]
+    dest_code = IDIOMAS[out_lang_name]["code"]
+    tld_code = ACENTOS_TLD[accent_name]
+
+    # Convertir BGR a RGB para PyTesseract
     img_rgb = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
-    text= pytesseract.image_to_string(img_rgb)
-st.write(text)  
-    
-      
-if img_file_buffer is not None:
-    # To read image file buffer with OpenCV:
-    bytes_data = img_file_buffer.getvalue()
-    cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
 
-    
-    if filtro == 'Con Filtro':
-         cv2_img=cv2.bitwise_not(cv2_img)
+    with st.spinner("Leyendo texto de la imagen..."):
+        try:
+            extracted_text = pytesseract.image_to_string(img_rgb, lang=ocr_code)
+        except Exception:
+            extracted_text = pytesseract.image_to_string(img_rgb)
+
+    text_clean = extracted_text.strip()
+
+    st.divider()
+    st.subheader("📝 Texto Detectado:")
+
+    if text_clean:
+        st.info(text_clean)
+
+        if st.button("🚀 Generar Voz Divertida", type="primary"):
+            with st.spinner("Traduciendo y modulando la voz..."):
+                try:
+                    # Traducción si los idiomas difieren
+                    if src_code != dest_code:
+                        translated_text = GoogleTranslator(
+                            source=src_code, target=dest_code
+                        ).translate(text_clean)
+                    else:
+                        translated_text = text_clean
+
+                    if display_output_text and src_code != dest_code:
+                        st.markdown(
+                            f"**Traducción ({out_lang_name}):** {translated_text}"
+                        )
+
+                    # Generación de audio con gTTS
+                    tts = gTTS(
+                        text=translated_text,
+                        lang=dest_code,
+                        tld=tld_code,
+                        slow=voz_lenta,
+                    )
+
+                    fp = io.BytesIO()
+                    tts.write_to_fp(fp)
+                    fp.seek(0)
+
+                    st.subheader("🔊 Audio Generado:")
+                    st.audio(fp, format="audio/mp3")
+
+                except Exception as e:
+                    st.error(f"Error al procesar la voz: {e}")
     else:
-        cv2_img= cv2_img
-          
-        
-    img_rgb = cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB)
-    text=pytesseract.image_to_string(img_rgb) 
-    st.write(text) 
-
-with st.sidebar:
-      st.subheader("Parámetros de traducción")
-      
-      try:
-          os.mkdir("temp")
-      except:
-          pass
-      #st.title("Text to speech")
-      translator = Translator()
-      
-      #text = st.text_input("Enter text")
-      in_lang = st.selectbox(
-          "Seleccione el lenguaje de entrada",
-          ("Ingles", "Español", "Bengali", "koreano", "Mandarin", "Japones"),
-      )
-      if in_lang == "Ingles":
-          input_language = "en"
-      elif in_lang == "Español":
-          input_language = "es"
-      elif in_lang == "Bengali":
-          input_language = "bn"
-      elif in_lang == "koreano":
-          input_language = "ko"
-      elif in_lang == "Mandarin":
-          input_language = "zh-cn"
-      elif in_lang == "Japones":
-          input_language = "ja"
-      
-      out_lang = st.selectbox(
-          "Select your output language",
-          ("Ingles", "Español", "Bengali", "koreano", "Mandarin", "Japones"),
-      )
-      if out_lang == "Ingles":
-          output_language = "en"
-      elif out_lang == "Español":
-          output_language = "es"
-      elif out_lang == "Bengali":
-          output_language = "bn"
-      elif out_lang == "koreano":
-          output_language = "ko"
-      elif out_lang == "Chinese":
-          output_language = "zh-cn"
-      elif out_lang == "Japones":
-          output_language = "ja"
-      
-      english_accent = st.selectbox(
-          "Seleccione el acento",
-          (
-              "Default",
-              "India",
-              "United Kingdom",
-              "United States",
-              "Canada",
-              "Australia",
-              "Ireland",
-              "South Africa",
-          ),
-      )
-      
-      if english_accent == "Default":
-          tld = "com"
-      elif english_accent == "India":
-          tld = "co.in"
-      
-      elif english_accent == "United Kingdom":
-          tld = "co.uk"
-      elif english_accent == "United States":
-          tld = "com"
-      elif english_accent == "Canada":
-          tld = "ca"
-      elif english_accent == "Australia":
-          tld = "com.au"
-      elif english_accent == "Ireland":
-          tld = "ie"
-      elif english_accent == "South Africa":
-          tld = "co.za"
-
-      display_output_text = st.checkbox("Mostrar texto")
-
-      if st.button("convert"):
-          result, output_text = text_to_speech(input_language, output_language, text, tld)
-          audio_file = open(f"temp/{result}.mp3", "rb")
-          audio_bytes = audio_file.read()
-          st.markdown(f"## Tu audio:")
-          st.audio(audio_bytes, format="audio/mp3", start_time=0)
-      
-          if display_output_text:
-              st.markdown(f"## Texto de salida:")
-              st.write(f" {output_text}")
-
-
-
-
+        st.warning(
+            "No se logró detectar texto legible en la imagen. Intenta enfocar mejor la foto."
+        )
  
     
     
