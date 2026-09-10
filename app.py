@@ -36,20 +36,9 @@ remove_old_files(1)
 # --- INTERFAZ PRINCIPAL ---
 st.title("🎙️ Lectura Divertida de Imágenes (OCR + Voz)")
 st.caption(
-    "Extrae texto de cualquier foto y escúchalo traducido o con voces y"
+    "Extrae texto de cualquier foto, tradúcelo y escúchalo con velocidades y"
     " acentos chistosos."
 )
-
-# Imagen decorativa previa
-try:
-    image_banner = Image.open("OIG7.jpg")
-    st.image(
-        image_banner,
-        use_container_width=True,
-        caption="¡Transforma tus fotos en audio con estilo!",
-    )
-except FileNotFoundError:
-    pass
 
 st.divider()
 
@@ -61,6 +50,8 @@ IDIOMAS = {
     "Alemán": {"ocr": "deu", "code": "de"},
     "Italiano": {"ocr": "ita", "code": "it"},
     "Portugués": {"ocr": "por", "code": "pt"},
+    "Japonés": {"ocr": "jpn", "code": "ja"},
+    "Coreano": {"ocr": "kor", "code": "ko"},
 }
 
 ACENTOS_TLD = {
@@ -86,12 +77,36 @@ with st.sidebar:
         "Idioma al que traducir la voz:", list(IDIOMAS.keys()), index=0
     )
 
-    st.header("🎭 3. Efecto de Voz Divertido")
+    st.header("🎭 3. Modos de Velocidad")
+
+    # Selección de velocidad (Tortuga vs Conejo)
+    modo_velocidad = st.radio(
+        "Velocidad de Lectura:",
+        ("🐢 Modo Tortuga (Lento / Robot)", "🐇 Modo Conejo (Rápido)"),
+        index=1,
+    )
+
     accent_name = st.selectbox(
         "Acento Regional (TLD):", list(ACENTOS_TLD.keys())
     )
-    voz_lenta = st.checkbox("🐢 Modo Voz Robot (Lectura Lenta)", value=False)
     display_output_text = st.checkbox("Mostrar texto traducido", value=True)
+
+    st.divider()
+    st.subheader("🐢 Mascota Guardiana")
+    # Imagen de la tortuga
+    try:
+        tortuga_img = Image.open("tortuga.jpg")
+        st.image(
+            tortuga_img,
+            caption="¡Mascota Lectora!",
+            use_container_width=True,
+        )
+    except FileNotFoundError:
+        st.image(
+            "https://images.unsplash.com/photo-1437622368342-7a3d73a34c8f?q=80&w=400&auto=format&fit=crop",
+            caption="📷 Coloca 'tortuga.jpg' en tu carpeta",
+            use_container_width=True,
+        )
 
 # --- CAPTURA O CARGA DE IMAGEN ---
 st.subheader("📸 Captura o Sube tu Imagen")
@@ -146,43 +161,56 @@ if img_cv is not None:
     if text_clean:
         st.info(text_clean)
 
-        if st.button("🚀 Generar Voz Divertida", type="primary"):
+        if st.button("🚀 Traducir y Generar Voz Divertida", type="primary"):
             with st.spinner("Traduciendo y modulando la voz..."):
-                try:
-                    # Traducción si los idiomas difieren
-                    if src_code != dest_code:
+                translated_text = text_clean
+
+                # Proceso de traducción con protección anti-fallos
+                if src_code != dest_code:
+                    try:
                         translated_text = GoogleTranslator(
                             source=src_code, target=dest_code
                         ).translate(text_clean)
-                    else:
+                    except Exception as e:
+                        st.warning(
+                            "No se pudo traducir el texto automáticamente."
+                            " Se usará el texto original extraído."
+                        )
                         translated_text = text_clean
 
-                    if display_output_text and src_code != dest_code:
-                        st.markdown(
-                            f"**Traducción ({out_lang_name}):** {translated_text}"
-                        )
+                if display_output_text and src_code != dest_code:
+                    st.markdown(
+                        f"**Traducción ({out_lang_name}):** {translated_text}"
+                    )
 
-                    # Generación de audio con gTTS
+                # Definir velocidad según el modo seleccionado
+                is_slow = "Tortuga" in modo_velocidad
+
+                try:
+                    # Generación de audio mediante gTTS
                     tts = gTTS(
                         text=translated_text,
                         lang=dest_code,
                         tld=tld_code,
-                        slow=voz_lenta,
+                        slow=is_slow,
                     )
 
                     fp = io.BytesIO()
                     tts.write_to_fp(fp)
                     fp.seek(0)
 
-                    st.subheader("🔊 Audio Generado:")
+                    st.subheader(
+                        "🔊 Audio Generado ("
+                        + ("🐢 Modo Lento" if is_slow else "🐇 Modo Rápido")
+                        + "):"
+                    )
                     st.audio(fp, format="audio/mp3")
 
                 except Exception as e:
-                    st.error(f"Error al procesar la voz: {e}")
+                    st.error(f"Error al generar el audio: {e}")
     else:
         st.warning(
-            "No se logró detectar texto legible en la imagen. Intenta enfocar mejor la foto."
+            "No se logró detectar texto legible en la imagen. Intenta enfocar mejor la foto o cambiar el filtro."
         )
- 
     
     
